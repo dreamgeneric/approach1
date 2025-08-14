@@ -52,6 +52,13 @@ export function Conversation() {
           // Best effort extraction
           const anyMsg = message as Record<string, unknown>;
           text = (anyMsg.text as string) || (anyMsg.message as string) || JSON.stringify(anyMsg);
+          
+          // Try to extract conversation ID from messages
+          const convId = (anyMsg as any)?.conversation_id || (anyMsg as any)?.conversationId;
+          if (typeof convId === 'string' && !telemetryRef.current.getElevenConversationId()) {
+            console.log('Found conversation ID in message:', convId);
+            telemetryRef.current.setElevenConversationId(convId);
+          }
         } else {
           text = String(message);
         }
@@ -168,10 +175,32 @@ export function Conversation() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
       startMicVisualizer(stream);
-      await conversation.startSession({
+      const result = await conversation.startSession({
         agentId: 'agent_5601k2frztsqeaht9m2tqzc2d08w',
         connectionType: 'webrtc',
+        userId: telemetryRef.current.getSummary().sessionId,
       });
+      console.log('StartSession result:', result);
+      try {
+        let elId: string | null = null;
+        
+        // Check if result is directly a string (conversation ID)
+        if (typeof result === 'string') {
+          elId = result;
+        } else if (result && typeof result === 'object') {
+          // Check if it's an object with conversation ID properties
+          const maybeObj: any = result as any;
+          elId = maybeObj?.conversationId || maybeObj?.id || maybeObj?.sessionId;
+        }
+        
+        console.log('Extracted conversation ID:', elId);
+        if (typeof elId === 'string' && elId.length > 0) {
+          telemetryRef.current.setElevenConversationId(elId);
+          console.log('Set EL conversation ID:', elId);
+        }
+      } catch (err) {
+        console.log('Error extracting conversation ID:', err);
+      }
     });
   }, [conversation, startMicVisualizer, withRetry]);
 

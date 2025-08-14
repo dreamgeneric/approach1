@@ -66,6 +66,7 @@ export class TelemetryRecorder {
   private totalAgentSpeakingMs = 0;
   private piiHits = 0;
   private agentId: string | null = null;
+  private elevenConversationId: string | null = null;
 
   constructor(init?: { agentId?: string | null }) {
     this.sessionId = crypto.randomUUID();
@@ -87,6 +88,14 @@ export class TelemetryRecorder {
 
   setAgentId(agentId: string) {
     this.agentId = agentId;
+  }
+
+  setElevenConversationId(conversationId: string) {
+    this.elevenConversationId = conversationId;
+  }
+
+  getElevenConversationId() {
+    return this.elevenConversationId;
   }
 
   incrementRetryAttempt() {
