@@ -1,6 +1,8 @@
 'use client';
 import { useConversation } from '@elevenlabs/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { TelemetryRecorder } from '../lib/telemetry';
+import ExportExcelButton from './ExportExcelButton';
 
 type HistoryItem = {
   id: string;
@@ -14,6 +16,7 @@ export function Conversation() {
   const [isRetrying, setIsRetrying] = useState(false);
   const [inputLevel, setInputLevel] = useState(0); // 0..1
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const telemetryRef = useRef<TelemetryRecorder>(new TelemetryRecorder({ agentId: 'agent_5601k2frztsqeaht9m2tqzc2d08w' }));
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -21,6 +24,9 @@ export function Conversation() {
   const rafIdRef = useRef<number | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const historyEndRef = useRef<HTMLDivElement | null>(null);
+  const speakingRef = useRef<boolean>(false);
+  const overlapActiveRef = useRef<boolean>(false);
+  const prevSpeakingRef = useRef<boolean>(false);
 
   const conversation = useConversation({
     onConnect: () => {
@@ -28,12 +34,14 @@ export function Conversation() {
         ...prev,
         { id: crypto.randomUUID(), role: 'system', text: 'Connected', timestamp: Date.now() },
       ]);
+      telemetryRef.current.startSession();
     },
     onDisconnect: () => {
       setHistory((prev) => [
         ...prev,
         { id: crypto.randomUUID(), role: 'system', text: 'Disconnected', timestamp: Date.now() },
       ]);
+      telemetryRef.current.endSession();
     },
     onMessage: (message: unknown) => {
       let text = '';
@@ -54,6 +62,7 @@ export function Conversation() {
         ...prev,
         { id: crypto.randomUUID(), role: 'agent', text, timestamp: Date.now() },
       ]);
+      telemetryRef.current.recordMessage({ timestamp: Date.now(), role: 'agent', text });
     },
     onError: (error: unknown) => {
       const msg = error instanceof Error ? error.message : String(error);
@@ -63,6 +72,7 @@ export function Conversation() {
         { id: crypto.randomUUID(), role: 'system', text: `Error: ${msg}`, timestamp: Date.now() },
       ]);
       console.error('Error:', error);
+      telemetryRef.current.recordError(msg);
     },
   });
 
@@ -90,6 +100,18 @@ export function Conversation() {
       // Smooth and clamp
       const smoothed = Math.min(1, Math.max(0, rms * 1.5));
       setInputLevel((prev) => prev * 0.7 + smoothed * 0.3);
+
+      // Overlap detection while agent is speaking
+      const threshold = 0.25;
+      if (speakingRef.current && smoothed > threshold) {
+        if (!overlapActiveRef.current) {
+          overlapActiveRef.current = true;
+          telemetryRef.current.recordOverlapEvent();
+          telemetryRef.current.maybeRecordBargeInLatency(Date.now());
+        }
+      } else {
+        overlapActiveRef.current = false;
+      }
       rafIdRef.current = window.requestAnimationFrame(tick);
     };
     rafIdRef.current = window.requestAnimationFrame(tick);
@@ -173,6 +195,18 @@ export function Conversation() {
   const levelPercent = useMemo(() => Math.round(inputLevel * 100), [inputLevel]);
   const speaking = conversation.isSpeaking;
 
+  // Track speaking transitions for telemetry
+  useEffect(() => {
+    speakingRef.current = speaking;
+    const wasSpeaking = prevSpeakingRef.current;
+    if (!wasSpeaking && speaking) {
+      telemetryRef.current.recordAgentSpeakingStart();
+    } else if (wasSpeaking && !speaking) {
+      telemetryRef.current.recordAgentSpeakingStop();
+    }
+    prevSpeakingRef.current = speaking;
+  }, [speaking]);
+
   return (
     <div className="flex w-full max-w-2xl flex-col items-stretch gap-6">
       <div className="rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 p-1 shadow-md">
@@ -237,6 +271,7 @@ export function Conversation() {
                 Retry
               </button>
             )}
+            <ExportExcelButton recorder={telemetryRef.current} />
           </div>
         </div>
       </div>
