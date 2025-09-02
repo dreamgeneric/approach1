@@ -199,7 +199,13 @@ export default function ExportExcelButton({ recorder }: { recorder: TelemetryRec
 
       // Analysis and evaluation results
       if (analysis && Object.keys(analysis).length > 0) {
-        const analysisData = [
+        type AnalysisData = {
+          call_successful: any;
+          transcript_summary: any;
+          call_summary_title: any;
+          [key: string]: any;
+        };
+        const analysisData: AnalysisData[] = [
           {
             call_successful: analysis.call_successful || '',
             transcript_summary: analysis.transcript_summary || '',
